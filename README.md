@@ -176,7 +176,7 @@ sync-DB/
 ## 🔧 Technology Stack
 
 - **Laravel**: 10.x
-- **PHP**: 8.2+
+- **PHP**: 8.1+
 - **PostgreSQL**: 15+
 - **MySQL**: 8.0+
 - **Kafka**: 3.x
