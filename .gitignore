@@ -1,0 +1,34 @@
+# Laravel
+/sync-service/vendor/
+/sync-service/node_modules/
+/sync-service/.env
+/sync-service/storage/*.key
+/sync-service/storage/logs/*
+/sync-service/storage/framework/cache/*
+/sync-service/storage/framework/sessions/*
+/sync-service/storage/framework/views/*
+/sync-service/bootstrap/cache/*
+
+# Docker volumes
+/postgres_data/
+/mysql_data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+

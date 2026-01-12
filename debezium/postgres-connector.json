@@ -1,0 +1,50 @@
+{
+  "name": "legacy-postgres-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "tasks.max": "1",
+    
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "postgres",
+    "database.password": "postgres",
+    "database.dbname": "legacy_db",
+    "database.server.name": "legacy",
+    
+    "plugin.name": "pgoutput",
+    "publication.autocreate.mode": "filtered",
+    
+    "table.include.list": "public.legacy_users,public.legacy_posts,public.legacy_likes",
+    
+    "topic.prefix": "legacy",
+    
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "false",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false",
+    
+    "transforms": "unwrap",
+    
+    "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
+    "transforms.unwrap.drop.tombstones": "false",
+    "transforms.unwrap.delete.handling.mode": "rewrite",
+    "transforms.unwrap.add.fields": "op,source.ts_ms",
+    
+    "snapshot.mode": "initial",
+    
+    "heartbeat.interval.ms": "10000",
+    "heartbeat.topics.prefix": "__debezium-heartbeat",
+    
+    "tombstones.on.delete": "true",
+    
+    "decimal.handling.mode": "double",
+    "time.precision.mode": "adaptive",
+    
+    "include.schema.changes": "false",
+    
+    "max.batch.size": "2048",
+    "max.queue.size": "8192",
+    "poll.interval.ms": "1000"
+  }
+}
+
