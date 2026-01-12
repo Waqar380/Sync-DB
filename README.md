@@ -195,46 +195,14 @@ The POC is successful if:
 - ✅ Idempotency is maintained
 - ✅ Failed events go to DLQ
 
-## 🚦 Quick Start (Windows Users - Start Here! 🪟)
-
-### ⚡ Super Easy Setup (3 Commands!)
-
-**For Windows users, we've created automated batch files:**
-
-```bash
-# 1️⃣ Check prerequisites (installs needed)
-CHECK-PREREQUISITES.bat
-
-# 2️⃣ Start everything (automated)
-start.bat          # Starts Docker + Registers connectors
-setup-laravel.bat  # Installs & configures Laravel
-
-# 3️⃣ Start consumers (2 separate terminals)
-cd sync-service
-php artisan consume:legacy-events    # Terminal 1
-php artisan consume:revamp-events    # Terminal 2
-
-# 4️⃣ Test it! (in a 3rd terminal)
-test-sync.bat
-
-# 5️⃣ Stop everything
-stop.bat
-```
-
-### 📖 Documentation for Windows Users
-- **👉 [WINDOWS-QUICKSTART.md](WINDOWS-QUICKSTART.md)** ← **Start here!**
-- **[EXECUTION-GUIDE.md](EXECUTION-GUIDE.md)** ← Detailed installation
-- **[QUICK-REFERENCE.md](QUICK-REFERENCE.md)** ← Commands cheat sheet
+## Setup (5 Minutes)
 
 ### Prerequisites
 - ✅ Docker Desktop for Windows
-- ✅ PHP 8.2+ (XAMPP works great!)
+- ✅ PHP 8.1+ (XAMPP works great!)
 - ✅ Composer
 - ✅ **rdkafka PHP extension** (most important!)
 
-**Not sure if you have these? Run `CHECK-PREREQUISITES.bat` - it will tell you!**
-
-### Setup (5 Minutes)
 
 1. **Start Infrastructure**
 ```bash
