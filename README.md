@@ -327,3 +327,43 @@ MIT License - POC Project
 
 **Built with ❤️ for demonstrating two-way DB sync patterns**
 
+
+# Testing/Running
+## Run docker 
+
+docker compose up -d
+
+
+## Connect connectors
+
+curl.exe http://localhost:8083/connectors/
+
+curl.exe -X POST http://localhost:8083/connectors -H "Content-Type: application/json" -d "@debezium/legacy-mysql-connector.json"
+
+curl.exe -X POST http://localhost:8083/connectors -H "Content-Type: application/json" -d "@debezium/mysql-connector.json"
+
+curl.exe http://localhost:8083/connectors/legacy-mysql-connector/status
+
+curl.exe http://localhost:8083/connectors/revamp-mysql-connector/status
+
+
+## Run events
+
+start cmd /k "php artisan consume:legacy-events"
+
+start cmd /k "php artisan consume:revamp-events"
+
+
+## legacy to revamp
+
+docker exec sync-mysql-legacy mysql -uroot -proot legacy_db -e "INSERT INTO legacy_users (username, email, full_name, phone_number, source) VALUES ('live_test1', 'live1@example.com', 'Live Test User1', '+1234567890', 'legacy');"
+
+docker exec sync-mysql-revamp mysql -uroot -proot revamp_db -e "SELECT id, user_name, email_address, display_name, source FROM revamp_users WHERE user_name = 'live_test1';"
+
+
+## revamp to legacy
+
+docker exec sync-mysql-revamp mysql -uroot -proot revamp_db -e "INSERT INTO revamp_users (user_name, email_address, display_name, mobile, source) VALUES ('new_test_4', 'new4@example.com', 'New Test 4', '+9876543210', 'revamp');"
+
+docker exec sync-mysql-legacy mysql -uroot -proot legacy_db -e "SELECT id, username, email, full_name, source FROM legacy_users WHERE username = 'new_test_4';"
+
