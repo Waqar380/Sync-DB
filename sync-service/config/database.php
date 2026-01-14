@@ -16,18 +16,22 @@ return [
             'foreign_key_constraints' => env('DB_FOREIGN_KEYS', true),
         ],
 
-        // Legacy PostgreSQL Database
+        // Legacy MySQL Database
         'legacy' => [
-            'driver' => 'pgsql',
+            'driver' => 'mysql',
             'url' => env('DATABASE_URL'),
             'host' => env('DB_LEGACY_HOST', '127.0.0.1'),
-            'port' => env('DB_LEGACY_PORT', '5432'),
+            'port' => env('DB_LEGACY_PORT', '3307'),
             'database' => env('DB_LEGACY_DATABASE', 'legacy_db'),
-            'username' => env('DB_LEGACY_USERNAME', 'postgres'),
-            'password' => env('DB_LEGACY_PASSWORD', ''),
-            'charset' => 'utf8',
+            'username' => env('DB_LEGACY_USERNAME', 'root'),
+            'password' => env('DB_LEGACY_PASSWORD', 'root'),
+            'unix_socket' => env('DB_SOCKET', ''),
+            'charset' => 'utf8mb4',
+            'collation' => 'utf8mb4_unicode_ci',
             'prefix' => '',
             'prefix_indexes' => true,
+            'strict' => true,
+            'engine' => null,
             'search_path' => 'public',
             'sslmode' => 'prefer',
         ],

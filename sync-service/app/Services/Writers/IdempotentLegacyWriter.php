@@ -9,10 +9,10 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Idempotent Writer for Legacy (PostgreSQL) Database
+ * Idempotent Writer for Legacy (MySQL) Database
  * 
- * Writes data to PostgreSQL with idempotency guarantees
- * using UPSERT (INSERT ... ON CONFLICT DO UPDATE).
+ * Writes data to MySQL with idempotency guarantees
+ * using UPSERT (INSERT ... ON DUPLICATE KEY UPDATE).
  */
 class IdempotentLegacyWriter implements IdempotentWriterInterface
 {
@@ -50,18 +50,18 @@ class IdempotentLegacyWriter implements IdempotentWriterInterface
                     'rows_affected' => $deleted,
                 ]);
             } else {
-                // Handle CREATE/UPDATE with UPSERT
+                // Handle CREATE/UPDATE with UPSERT (MySQL syntax)
                 $columns = array_keys($data);
                 $values = array_values($data);
                 $placeholders = array_fill(0, count($values), '?');
                 
                 $updateSet = array_map(
-                    fn($col) => "{$col} = EXCLUDED.{$col}",
+                    fn($col) => "{$col} = VALUES({$col})",
                     array_filter($columns, fn($col) => $col !== 'id')
                 );
 
                 $sql = sprintf(
-                    "INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (id) DO UPDATE SET %s, updated_at = CURRENT_TIMESTAMP",
+                    "INSERT INTO %s (%s) VALUES (%s) ON DUPLICATE KEY UPDATE %s, updated_at = CURRENT_TIMESTAMP",
                     $tableName,
                     implode(', ', $columns),
                     implode(', ', $placeholders),
@@ -77,27 +77,27 @@ class IdempotentLegacyWriter implements IdempotentWriterInterface
                         'result' => $result,
                     ]);
                 } catch (\Exception $e) {
-                    // Check if it's a sequence/duplicate key error
-                    if ($this->isSequenceError($e)) {
-                        Log::warning('Sequence out of sync detected, attempting to fix', [
+                    // Check if it's an auto-increment/duplicate key error
+                    if ($this->isAutoIncrementError($e)) {
+                        Log::warning('AUTO_INCREMENT out of sync detected, attempting to fix', [
                             'entity_type' => $entityType,
                             'table' => $tableName,
                             'error' => $e->getMessage(),
                         ]);
 
-                        // Fix the sequence and retry
-                        $this->fixSequence($tableName);
+                        // Fix the AUTO_INCREMENT and retry
+                        $this->fixAutoIncrement($tableName);
                         
                         // Retry the insert
                         $result = DB::connection($this->connection)->insert($sql, $values);
 
-                        Log::info('Upserted to Legacy database after sequence fix', [
+                        Log::info('Upserted to Legacy database after AUTO_INCREMENT fix', [
                             'entity_type' => $entityType,
                             'primary_key' => $primaryKey,
                             'result' => $result,
                         ]);
                     } else {
-                        // Re-throw if it's not a sequence error
+                        // Re-throw if it's not an auto-increment error
                         throw $e;
                     }
                 }
@@ -157,40 +157,42 @@ class IdempotentLegacyWriter implements IdempotentWriterInterface
     }
 
     /**
-     * Check if the exception is a sequence/duplicate key error
+     * Check if the exception is an AUTO_INCREMENT/duplicate key error
      */
-    private function isSequenceError(\Exception $e): bool
+    private function isAutoIncrementError(\Exception $e): bool
     {
         $message = $e->getMessage();
         
-        // PostgreSQL duplicate key error patterns
-        return str_contains($message, 'duplicate key value violates unique constraint') ||
-               str_contains($message, '_pkey') ||
-               str_contains($message, 'Key (id)=');
+        // MySQL duplicate key error patterns
+        return str_contains($message, 'Duplicate entry') ||
+               str_contains($message, 'for key') ||
+               str_contains($message, 'PRIMARY');
     }
 
     /**
-     * Fix PostgreSQL sequence for a table
+     * Fix MySQL AUTO_INCREMENT for a table
      */
-    private function fixSequence(string $tableName): void
+    private function fixAutoIncrement(string $tableName): void
     {
         try {
-            // Extract sequence name from table name
-            // Table: legacy_users -> Sequence: legacy_users_id_seq
-            $sequenceName = "{$tableName}_id_seq";
+            // Get max ID from table
+            $maxId = DB::connection($this->connection)
+                ->table($tableName)
+                ->max('id') ?? 0;
 
-            // Reset sequence to max ID
-            $sql = "SELECT setval('{$sequenceName}', (SELECT COALESCE(MAX(id), 1) FROM {$tableName}))";
+            // Set AUTO_INCREMENT to max_id + 1
+            $nextId = $maxId + 1;
             
-            $result = DB::connection($this->connection)->select($sql);
+            $sql = "ALTER TABLE {$tableName} AUTO_INCREMENT = {$nextId}";
+            DB::connection($this->connection)->statement($sql);
             
-            Log::info('Fixed PostgreSQL sequence', [
+            Log::info('Fixed MySQL AUTO_INCREMENT', [
                 'table' => $tableName,
-                'sequence' => $sequenceName,
-                'new_value' => $result[0]->setval ?? null,
+                'max_id' => $maxId,
+                'next_auto_increment' => $nextId,
             ]);
         } catch (\Exception $e) {
-            Log::error('Failed to fix PostgreSQL sequence', [
+            Log::error('Failed to fix MySQL AUTO_INCREMENT', [
                 'table' => $tableName,
                 'error' => $e->getMessage(),
             ]);

@@ -1,329 +1,485 @@
-# Two-Way DB Sync POC using Kafka, Laravel & Source Flag
+# Two-Way Database Synchronization POC
 
-## 🎯 Project Overview
+## 🎯 Overview
 
-This is a Proof of Concept (POC) for **two-way database synchronization** between a Legacy platform (PostgreSQL) and a Revamped platform (MySQL) using:
-- **Kafka** as the event transport layer
-- **CDC (Change Data Capture)** for capturing database changes
-- **Laravel Sync Service** as the intelligent consumer and writer
-- **Source Flag** mechanism to prevent infinite replication loops
+A **production-ready** Proof of Concept for **two-way database synchronization** between **two MySQL databases** with different schemas, using **Kafka**, **Debezium CDC**, and **Laravel**.
 
-## 🏗️ Architecture Overview
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         TWO-WAY SYNC FLOW                            │
-└─────────────────────────────────────────────────────────────────────┘
-
-[Legacy Platform - PostgreSQL]
-         │
-         │ CDC (Debezium)
-         │ source='legacy'
-         ▼
-   [Kafka: legacy.events]
-         │
-         │ Consume
-         ▼
-   [Laravel Sync Service]
-         │
-         │ Transform & Write
-         │ source='sync_service'
-         ▼
-[Revamped Platform - MySQL]
-         │
-         │ CDC (Debezium)
-         │ source='revamp'
-         ▼
-   [Kafka: revamp.events]
-         │
-         │ Consume
-         ▼
-   [Laravel Sync Service]
-         │
-         │ Transform & Write
-         │ source='sync_service'
-         ▼
-[Legacy Platform - PostgreSQL]
-
-```
-
-## 🔒 Loop Prevention Strategy
-
-### The Source Column Mechanism
-
-Every synced table in both databases includes a `source` column with three possible values:
-
-| Value | Description |
-|-------|-------------|
-| `legacy` | Record created/updated directly in PostgreSQL |
-| `revamp` | Record created/updated directly in MySQL |
-| `sync_service` | Record created/updated by Laravel Sync Service |
-
-### Hard Rule
-
-**Any record with `source = 'sync_service'` MUST NOT be republished to Kafka.**
-
-This is enforced at the CDC level (Debezium configuration) or within the Sync Service logic.
-
-## 📋 System Components
-
-### 1. Legacy Database (PostgreSQL)
-- Dummy database for POC
-- Different schema from revamped DB
-- Includes `source` column on all synced tables
-
-### 2. Revamped Database (MySQL)
-- Dummy database for POC
-- Different data model
-- Includes `source` column on all synced tables
-
-### 3. Kafka Topics
-- `legacy.events` - Events from PostgreSQL CDC
-- `revamp.events` - Events from MySQL CDC
-- `sync.dlq` - Dead Letter Queue for failed events
-
-### 4. Laravel Sync Service
-- **Consumers**: `LegacyEventConsumer`, `RevampEventConsumer`
-- **Transformers**: Bidirectional schema mappers
-- **Writers**: Idempotent database writers
-- **Handlers**: Retry, DLQ, and error handling
-
-## 🗄️ Database Schemas
-
-### Sample Entities (POC)
-1. **Users** - User accounts
-2. **Posts** - User-generated content
-3. **Likes** - Post engagement
-
-Each entity has:
-- Different column names between Postgres and MySQL
-- `source` column for loop prevention
-- Timestamps (`created_at`, `updated_at`)
-- Primary keys
-
-## 🚀 Data Flow
-
-### Legacy → Revamped Flow
-
-```
-1. INSERT/UPDATE in PostgreSQL (source='legacy')
-2. Debezium captures change → Publishes to Kafka (legacy.events)
-3. Laravel Sync Service consumes event
-4. Service checks: source == 'sync_service'? → SKIP
-5. Transform schema (Postgres → MySQL format)
-6. UPSERT into MySQL (source='sync_service')
-7. MySQL CDC sees change but FILTERS OUT (source='sync_service')
-   → NO Kafka event published
-```
-
-### Revamped → Legacy Flow
-
-```
-1. INSERT/UPDATE in MySQL (source='revamp')
-2. Debezium captures change → Publishes to Kafka (revamp.events)
-3. Laravel Sync Service consumes event
-4. Service checks: source == 'sync_service'? → SKIP
-5. Transform schema (MySQL → Postgres format)
-6. UPSERT into PostgreSQL (source='sync_service')
-7. Postgres CDC sees change but FILTERS OUT (source='sync_service')
-   → NO Kafka event published
-```
-
-## 📦 Project Structure
-
-```
-sync-DB/
-├── README.md
-├── ARCHITECTURE.md
-├── docker-compose.yml
-├── databases/
-│   ├── postgres/
-│   │   ├── migrations/
-│   │   ├── seeds/
-│   │   └── schema.sql
-│   └── mysql/
-│       ├── migrations/
-│       ├── seeds/
-│       └── schema.sql
-├── debezium/
-│   ├── postgres-connector.json
-│   └── mysql-connector.json
-├── sync-service/
-│   ├── app/
-│   │   ├── Console/
-│   │   │   └── Commands/
-│   │   │       ├── ConsumeLegacyEvents.php
-│   │   │       └── ConsumeRevampEvents.php
-│   │   ├── Services/
-│   │   │   ├── Consumers/
-│   │   │   ├── Transformers/
-│   │   │   ├── Writers/
-│   │   │   └── Handlers/
-│   │   ├── DTOs/
-│   │   ├── Models/
-│   │   └── Repositories/
-│   ├── config/
-│   │   └── kafka.php
-│   ├── database/
-│   │   └── migrations/
-│   ├── tests/
-│   └── composer.json
-└── testing/
-    ├── test-scenarios.md
-    └── scripts/
-```
-
-## 🔧 Technology Stack
-
-- **Laravel**: 10.x
-- **PHP**: 8.1+
-- **PostgreSQL**: 15+
-- **MySQL**: 8.0+
-- **Kafka**: 3.x
-- **Debezium**: 2.x
-- **PHP Kafka Client**: rdkafka / php-rdkafka
-
-## ✅ Success Criteria
-
-The POC is successful if:
-
-- ✅ Insert/update in Postgres reflects in MySQL
-- ✅ Insert/update in MySQL reflects in Postgres
-- ✅ No infinite Kafka loops occur
-- ✅ Records with `source = 'sync_service'` are never re-synced
-- ✅ Schema transformations work correctly
-- ✅ Idempotency is maintained
-- ✅ Failed events go to DLQ
-
-## Setup (5 Minutes)
-
-### Prerequisites
-- ✅ Docker Desktop for Windows
-- ✅ PHP 8.1+ (XAMPP works great!)
-- ✅ Composer
-- ✅ **rdkafka PHP extension** (most important!)
-
-
-1. **Start Infrastructure**
-```bash
-docker-compose up -d
-sleep 30  # Wait for services
-```
-
-2. **Register Debezium Connectors**
-```bash
-cd debezium
-./register-connectors.sh
-```
-
-3. **Install & Configure Sync Service**
-```bash
-cd ../sync-service
-composer install
-cp env.example .env
-php artisan key:generate
-php artisan migrate --database=revamp
-```
-
-4. **Start Consumers (2 terminals)**
-```bash
-# Terminal 1
-php artisan consume:legacy-events
-
-# Terminal 2
-php artisan consume:revamp-events
-```
-
-5. **Run Tests**
-```bash
-cd ../testing/scripts
-chmod +x *.sh
-./test-legacy-to-revamp.sh
-./test-revamp-to-legacy.sh
-./test-loop-prevention.sh
-```
-
-### Quick Test
-
-```bash
-# Insert in Legacy (PostgreSQL)
-docker exec -it sync-postgres psql -U postgres -d legacy_db -c "
-INSERT INTO legacy_users (username, email, full_name, source)
-VALUES ('quicktest', 'quick@test.com', 'Quick Test', 'legacy');"
-
-# Wait 5 seconds
-sleep 5
-
-# Verify in Revamp (MySQL)
-docker exec -it sync-mysql mysql -uroot -proot revamp_db -e "
-SELECT * FROM revamp_users WHERE user_name = 'quicktest';"
-```
-
-**Expected**: Record appears in MySQL with `source='sync_service'` ✓
-
-## 📊 Monitoring
-
-- **Kafka Consumer Lag**: Check consumer group lag
-- **DLQ Messages**: Monitor dead letter queue
-- **Logs**: Structured logging in `storage/logs/`
-- **Metrics**: Event processing times, success/failure rates
-
-## 🔐 Security Considerations
-
-- Database credentials stored in `.env`
-- Kafka authentication configured
-- SSL/TLS for database connections
-- Input validation on all transformers
-
-## 📝 Event Contract
-
-```json
-{
-  "event_id": "uuid-v4",
-  "entity_type": "users",
-  "operation": "CREATE|UPDATE|DELETE",
-  "primary_key": "123",
-  "payload": {
-    "id": 123,
-    "name": "John Doe",
-    "email": "john@example.com",
-    "source": "legacy"
-  },
-  "source": "legacy",
-  "event_version": "1.0.0",
-  "timestamp": "2026-01-08T10:30:00Z"
-}
-```
-
-## 🎓 Key Learnings
-
-1. **Source flag** is critical for loop prevention
-2. **Idempotency** ensures safe retries
-3. **Schema evolution** requires versioned events
-4. **DLQ** is essential for production readiness
-5. **Monitoring** is mandatory for distributed systems
-
-## 📚 Documentation
-
-- [Architecture Details](./ARCHITECTURE.md)
-- [Database Schemas](./databases/README.md)
-- [Sync Service Guide](./sync-service/README.md)
-- [Testing Guide](./testing/README.md)
-
-## 🤝 Contributing
-
-This is a POC project. For production use, consider:
-- Schema version management
-- Conflict resolution strategies
-- Multi-region support
-- Performance optimization
-- Security hardening
-
-## 📄 License
-
-MIT License - POC Project
+### **Key Features:**
+- ✅ **Dual MySQL Setup** - Both Legacy and Revamp databases are MySQL
+- ✅ **Different Schemas** - Automatic schema transformation between databases
+- ✅ **Two-Way Sync** - Changes flow in both directions
+- ✅ **Loop Prevention** - Intelligent `source` tracking prevents infinite loops
+- ✅ **AUTO_INCREMENT Auto-Fix** - Database triggers prevent duplicate key errors
+- ✅ **Idempotent Writes** - Safe to replay events
+- ✅ **Event Streaming** - Kafka for reliable, scalable messaging
+- ✅ **Change Data Capture** - Debezium captures all database changes
+- ✅ **Transformation Layer** - DTOs and mappers handle schema differences
 
 ---
 
-**Built with ❤️ for demonstrating two-way DB sync patterns**
+## 🏗️ Architecture
+
+```
+┌─────────────────┐         ┌─────────────────┐
+│  MySQL Legacy   │         │  MySQL Revamp   │
+│  (Port 3307)    │         │  (Port 3306)    │
+│                 │         │                 │
+│ legacy_users    │         │ revamp_users    │
+│ legacy_posts    │         │ revamp_posts    │
+│ legacy_likes    │         │ revamp_likes    │
+└───────┬─────────┘         └───────┬─────────┘
+        │                           │
+        │ CDC                       │ CDC
+        ▼                           ▼
+    ┌────────────────────────────────────┐
+    │         Kafka + Debezium           │
+    │  • Auto-capture all changes        │
+    │  • Event streaming                 │
+    └────────────┬───────────────────────┘
+                 │
+                 ▼
+         ┌───────────────┐
+         │ Laravel Sync  │
+         │   Service     │
+         │               │
+         │ • Schema Transform │
+         │ • Loop Prevention  │
+         │ • Idempotent Write │
+         └───────────────┘
+```
+
+---
+
+## 🚀 Quick Start
+
+### **Prerequisites:**
+- Docker Desktop (running)
+- PHP 8.1+ with Composer
+- Windows PowerShell or CMD
+
+### **Step 1: Start Infrastructure**
+```powershell
+.\start-dual-mysql.bat
+```
+
+This will:
+1. Start both MySQL databases
+2. Start Kafka + Zookeeper
+3. Start Debezium Connect
+4. Register both MySQL connectors
+5. Display service status
+
+### **Step 2: Setup Laravel**
+```powershell
+cd sync-service
+composer install
+cp env.example .env
+php artisan key:generate
+php artisan migrate
+```
+
+### **Step 3: Start Consumers**
+
+**Terminal 1:**
+```powershell
+cd sync-service
+php artisan consume:legacy-events
+```
+
+**Terminal 2:**
+```powershell
+cd sync-service
+php artisan consume:revamp-events
+```
+
+### **Step 4: Test the Sync**
+```powershell
+.\test-dual-mysql-sync.bat
+```
+
+---
+
+## 📊 Database Configuration
+
+### **Legacy MySQL (Port 3307)**
+
+**Tables:**
+- `legacy_users` (username, email, full_name, phone_number, status)
+- `legacy_posts` (user_id, post_title, post_content, post_status, view_count)
+- `legacy_likes` (user_id, post_id, like_type)
+
+**Location:** `databases/mysql-legacy/schema.sql`
+
+### **Revamp MySQL (Port 3306)**
+
+**Tables:**
+- `revamp_users` (user_name, email_address, display_name, mobile, account_status)
+- `revamp_posts` (author_id, title, content, status, views)
+- `revamp_likes` (user_id, post_id, reaction_type)
+
+**Location:** `databases/mysql-revamp/schema.sql`
+
+### **Schema Transformation**
+
+| Legacy Column | Revamp Column |
+|---------------|---------------|
+| `username` | `user_name` |
+| `email` | `email_address` |
+| `full_name` | `display_name` |
+| `phone_number` | `mobile` |
+| `status` | `account_status` |
+| `user_id` | `author_id` |
+| `post_title` | `title` |
+| `post_content` | `content` |
+| `post_status` | `status` |
+| `view_count` | `views` |
+| `like_type` | `reaction_type` |
+
+---
+
+## 🔄 How It Works
+
+### **Data Flow: Legacy → Revamp**
+
+```
+1. User inserts record in Legacy MySQL
+   ↓
+2. Debezium captures INSERT via binlog
+   ↓
+3. Event published to Kafka topic: legacy.legacy_db.legacy_users
+   ↓
+4. Laravel LegacyEventConsumer receives event
+   ↓
+5. RevampToLegacyMapper transforms schema
+   ↓
+6. IdempotentRevampWriter writes to Revamp MySQL
+   ↓
+7. Record has source='sync_service' (prevents loop)
+```
+
+### **Loop Prevention**
+
+Every record has a `source` column with 3 possible values:
+- `legacy` - Originated in Legacy database
+- `revamp` - Originated in Revamp database
+- `sync_service` - Synced by Laravel (DO NOT RE-SYNC)
+
+**Consumer Logic:**
+```php
+if ($event->source === 'sync_service') {
+    Log::info('Skipping sync_service record to prevent loop');
+    return; // Skip!
+}
+```
+
+---
+
+## 🧪 Testing
+
+### **Manual Testing**
+
+**Test Legacy → Revamp:**
+```powershell
+docker exec sync-mysql-legacy mysql -uroot -proot legacy_db -e "INSERT INTO legacy_users (username, email, full_name, source) VALUES ('test1', 'test1@example.com', 'Test One', 'legacy');"
+
+# Wait 5 seconds
+Start-Sleep -Seconds 5
+
+# Verify sync
+docker exec sync-mysql-revamp mysql -uroot -proot revamp_db -e "SELECT * FROM revamp_users WHERE user_name = 'test1';"
+```
+
+**Test Revamp → Legacy:**
+```powershell
+docker exec sync-mysql-revamp mysql -uroot -proot revamp_db -e "INSERT INTO revamp_users (user_name, email_address, display_name, source) VALUES ('test2', 'test2@example.com', 'Test Two', 'revamp');"
+
+# Wait 5 seconds
+Start-Sleep -Seconds 5
+
+# Verify sync
+docker exec sync-mysql-legacy mysql -uroot -proot legacy_db -e "SELECT * FROM legacy_users WHERE username = 'test2';"
+```
+
+### **Automated Testing**
+```powershell
+.\test-dual-mysql-sync.bat
+```
+
+Runs 4 tests:
+1. ✅ Legacy → Revamp sync
+2. ✅ Revamp → Legacy sync
+3. ✅ Loop prevention (source='sync_service' not synced)
+4. ✅ View recent records
+
+---
+
+## 🔍 Monitoring
+
+### **Kafka UI**
+Open browser: http://localhost:8080
+
+View:
+- **Topics** - Message counts and contents
+- **Consumers** - Consumer lag and offset positions
+- **Connectors** - Debezium connector status
+
+### **Check Connector Status**
+```powershell
+curl.exe http://localhost:8083/connectors/
+curl.exe http://localhost:8083/connectors/legacy-mysql-connector/status
+curl.exe http://localhost:8083/connectors/revamp-mysql-connector/status
+```
+
+### **View Laravel Logs**
+```powershell
+Get-Content sync-service/storage/logs/laravel.log -Tail 50 -Wait
+```
+
+### **Check Database Records**
+```powershell
+# Legacy database
+docker exec sync-mysql-legacy mysql -uroot -proot legacy_db -e "SELECT id, username, source FROM legacy_users ORDER BY id DESC LIMIT 10;"
+
+# Revamp database
+docker exec sync-mysql-revamp mysql -uroot -proot revamp_db -e "SELECT id, user_name, source FROM revamp_users ORDER BY id DESC LIMIT 10;"
+```
+
+---
+
+## 🛠️ Troubleshooting
+
+### **Duplicate Key Errors**
+
+**Problem:** `Duplicate entry '10' for key 'PRIMARY'`
+
+**Solution:** AUTO_INCREMENT triggers are already in place. If you still encounter issues:
+
+```powershell
+# Check current AUTO_INCREMENT values
+docker exec sync-mysql-legacy mysql -uroot -proot legacy_db -e "SELECT TABLE_NAME, AUTO_INCREMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA='legacy_db';"
+```
+
+### **Connector Not Running**
+
+```powershell
+# Re-register connector
+curl.exe -X DELETE http://localhost:8083/connectors/legacy-mysql-connector
+curl.exe -X POST http://localhost:8083/connectors -H "Content-Type: application/json" -d "@debezium/legacy-mysql-connector.json"
+```
+
+### **Consumer Not Processing**
+
+```powershell
+# Check if Kafka has messages
+docker exec sync-kafka kafka-console-consumer --bootstrap-server localhost:9092 --topic legacy.legacy_db.legacy_users --from-beginning --max-messages 1
+
+# Reset consumer offsets (stop consumers first!)
+docker exec sync-kafka kafka-consumer-groups --bootstrap-server localhost:9092 --group sync-service-legacy --reset-offsets --to-earliest --all-topics --execute
+```
+
+---
+
+## 📁 Project Structure
+
+```
+sync-DB/
+├── databases/
+│   ├── mysql-legacy/
+│   │   ├── schema.sql        # Legacy MySQL schema
+│   │   └── my.cnf            # MySQL config
+│   └── mysql-revamp/
+│       ├── schema.sql        # Revamp MySQL schema
+│       └── my.cnf            # MySQL config
+├── debezium/
+│   ├── legacy-mysql-connector.json
+│   └── mysql-connector.json
+├── sync-service/
+│   ├── app/
+│   │   ├── DTOs/
+│   │   │   ├── SyncEvent.php
+│   │   │   └── UserDTO.php
+│   │   ├── Services/
+│   │   │   ├── Transformers/
+│   │   │   │   ├── LegacyToRevampMapper.php
+│   │   │   │   └── RevampToLegacyMapper.php
+│   │   │   ├── Writers/
+│   │   │   │   ├── IdempotentLegacyWriter.php
+│   │   │   │   └── IdempotentRevampWriter.php
+│   │   │   └── Consumers/
+│   │   │       ├── LegacyEventConsumer.php
+│   │   │       └── RevampEventConsumer.php
+│   │   └── Console/Commands/
+│   │       ├── ConsumeLegacyEvents.php
+│   │       └── ConsumeRevampEvents.php
+│   └── .env
+├── docker-compose.yml
+├── start-dual-mysql.bat       # Start all infrastructure
+├── test-dual-mysql-sync.bat   # Run sync tests
+├── README.md                  # This file
+└── DUAL-MYSQL-SETUP.md        # Detailed setup guide
+```
+
+---
+
+## 📚 Documentation
+
+| Document | Description |
+|----------|-------------|
+| **README.md** | Quick start and overview (this file) |
+| **DUAL-MYSQL-SETUP.md** | Comprehensive setup guide |
+| **DATABASE-TRIGGER-SOLUTION.md** | AUTO_INCREMENT auto-fix documentation |
+| **TECHNICAL-DOCUMENTATION.html** | Developer technical reference |
+
+---
+
+## ✅ Success Criteria
+
+Your setup is working if:
+
+1. ✅ Both MySQL containers are running
+2. ✅ Both Debezium connectors show `RUNNING` status
+3. ✅ Laravel consumers process events
+4. ✅ Data inserted in Legacy appears in Revamp
+5. ✅ Data inserted in Revamp appears in Legacy
+6. ✅ Records with `source='sync_service'` are NOT re-synced
+7. ✅ No duplicate key errors occur
+8. ✅ Schema transformations work correctly
+
+---
+
+## 🎉 Features Implemented
+
+### **Core Functionality:**
+- ✅ Two-way database synchronization
+- ✅ Change Data Capture (CDC) using Debezium
+- ✅ Event streaming via Kafka
+- ✅ Schema transformation layer
+- ✅ Loop prevention mechanism
+- ✅ Idempotent writes
+
+### **Reliability:**
+- ✅ Automatic retry with exponential backoff
+- ✅ Dead Letter Queue for failed messages
+- ✅ Event deduplication
+- ✅ Graceful shutdown handling
+
+### **Data Integrity:**
+- ✅ Database triggers for AUTO_INCREMENT auto-fix
+- ✅ Transaction-based writes
+- ✅ Entity mapping table
+- ✅ Processed events tracking
+
+### **Observability:**
+- ✅ Structured logging
+- ✅ Kafka UI for monitoring
+- ✅ Consumer lag tracking
+- ✅ Connector health checks
+
+---
+
+## 🔧 Configuration
+
+### **Environment Variables**
+
+**File:** `sync-service/.env`
+
+```env
+# Legacy Database
+DB_LEGACY_CONNECTION=mysql
+DB_LEGACY_HOST=127.0.0.1
+DB_LEGACY_PORT=3307
+DB_LEGACY_DATABASE=legacy_db
+
+# Revamp Database
+DB_REVAMP_CONNECTION=mysql
+DB_REVAMP_HOST=127.0.0.1
+DB_REVAMP_PORT=3306
+DB_REVAMP_DATABASE=revamp_db
+
+# Kafka
+KAFKA_BROKERS=localhost:29092
+KAFKA_LEGACY_TOPIC=legacy.legacy_db.legacy_users,legacy.legacy_db.legacy_posts,legacy.legacy_db.legacy_likes
+KAFKA_REVAMP_TOPIC=revamp.revamp_db.revamp_users,revamp.revamp_db.revamp_posts,revamp.revamp_db.revamp_likes
+```
+
+---
+
+## 📞 Support
+
+For issues or questions:
+1. Check the logs: `sync-service/storage/logs/laravel.log`
+2. Review Kafka UI: http://localhost:8080
+3. Check connector status: `curl http://localhost:8083/connectors/`
+4. Consult `DUAL-MYSQL-SETUP.md` for detailed troubleshooting
+
+---
+
+## 📝 License
+
+This is a Proof of Concept (POC) project. Use at your own discretion.
+
+---
+
+## 🚀 Next Steps
+
+1. **Test with production-like data volumes**
+2. **Add more entities** (tables) as needed
+3. **Implement additional transformations**
+4. **Set up alerting** for consumer lag
+5. **Configure retention policies** for Kafka topics
+6. **Implement schema evolution** handling
+7. **Add integration tests**
+8. **Deploy to staging/production**
+
+---
+
+**Built with:**
+- 🐘 PHP 8.1+ & Laravel 10
+- 🐬 MySQL 8.0
+- 🎯 Apache Kafka 7.5
+- 🔄 Debezium 2.5
+- 🐳 Docker & Docker Compose
+
+---
+
+**Happy Syncing!** 🎉
+
+# Testing/Running
+## Run docker 
+
+docker compose up -d
+
+
+## Connect connectors
+
+curl.exe http://localhost:8083/connectors/
+
+curl.exe -X POST http://localhost:8083/connectors -H "Content-Type: application/json" -d "@debezium/legacy-mysql-connector.json"
+
+curl.exe -X POST http://localhost:8083/connectors -H "Content-Type: application/json" -d "@debezium/mysql-connector.json"
+
+curl.exe http://localhost:8083/connectors/legacy-mysql-connector/status
+
+curl.exe http://localhost:8083/connectors/revamp-mysql-connector/status
+
+
+## Run events
+
+start cmd /k "php artisan consume:legacy-events"
+
+start cmd /k "php artisan consume:revamp-events"
+
+
+## legacy to revamp
+
+docker exec sync-mysql-legacy mysql -uroot -proot legacy_db -e "INSERT INTO legacy_users (username, email, full_name, phone_number, source) VALUES ('live_test1', 'live1@example.com', 'Live Test User1', '+1234567890', 'legacy');"
+
+docker exec sync-mysql-revamp mysql -uroot -proot revamp_db -e "SELECT id, user_name, email_address, display_name, source FROM revamp_users WHERE user_name = 'live_test1';"
+
+
+## revamp to legacy
+
+docker exec sync-mysql-revamp mysql -uroot -proot revamp_db -e "INSERT INTO revamp_users (user_name, email_address, display_name, mobile, source) VALUES ('new_test_4', 'new4@example.com', 'New Test 4', '+9876543210', 'revamp');"
+
+docker exec sync-mysql-legacy mysql -uroot -proot legacy_db -e "SELECT id, username, email, full_name, source FROM legacy_users WHERE username = 'new_test_4';"
 

@@ -1,37 +1,43 @@
 services:
   # ============================================
-  # PostgreSQL (Legacy Database)
+  # MySQL Legacy (Legacy Database)
   # ============================================
-  postgres:
-    image: postgres:15-alpine
-    container_name: sync-postgres
+  mysql-legacy:
+    image: mysql:8.0
+    container_name: sync-mysql-legacy
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: legacy_db
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: legacy_db
+      MYSQL_USER: debezium
+      MYSQL_PASSWORD: dbz
     ports:
-      - "5433:5432"
+      - "3307:3306"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./databases/postgres/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - mysql_legacy_data:/var/lib/mysql
+      - ./databases/mysql-legacy/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./databases/mysql-legacy/my.cnf:/etc/mysql/conf.d/custom.cnf
     command:
-      - "postgres"
-      - "-c"
-      - "wal_level=logical"
+      - --server-id=1
+      - --log-bin=mysql-bin
+      - --binlog-format=ROW
+      - --binlog-row-image=FULL
+      - --expire-logs-days=7
+      - --gtid-mode=ON
+      - --enforce-gtid-consistency=ON
     networks:
       - sync-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   # ============================================
-  # MySQL (Revamped Database)
+  # MySQL Revamp (Revamped Database)
   # ============================================
-  mysql:
+  mysql-revamp:
     image: mysql:8.0
-    container_name: sync-mysql
+    container_name: sync-mysql-revamp
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: revamp_db
@@ -40,11 +46,11 @@ services:
     ports:
       - "3306:3306"
     volumes:
-      - mysql_data:/var/lib/mysql
-      - ./databases/mysql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
-      - ./databases/mysql/my.cnf:/etc/mysql/conf.d/custom.cnf
+      - mysql_revamp_data:/var/lib/mysql
+      - ./databases/mysql-revamp/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./databases/mysql-revamp/my.cnf:/etc/mysql/conf.d/custom.cnf
     command:
-      - --server-id=1
+      - --server-id=2
       - --log-bin=mysql-bin
       - --binlog-format=ROW
       - --binlog-row-image=FULL
@@ -116,8 +122,8 @@ services:
     container_name: sync-connect
     depends_on:
       - kafka
-      - postgres
-      - mysql
+      - mysql-legacy
+      - mysql-revamp
     environment:
       BOOTSTRAP_SERVERS: kafka:9092
       GROUP_ID: sync-connect-cluster
@@ -171,8 +177,8 @@ networks:
 # Volumes
 # ============================================
 volumes:
-  postgres_data:
+  mysql_legacy_data:
     driver: local
-  mysql_data:
+  mysql_revamp_data:
     driver: local
 

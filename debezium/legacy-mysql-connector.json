@@ -1,22 +1,22 @@
 {
-  "name": "revamp-mysql-connector",
+  "name": "legacy-mysql-connector",
   "config": {
     "connector.class": "io.debezium.connector.mysql.MySqlConnector",
     "tasks.max": "1",
     
-    "database.hostname": "mysql-revamp",
+    "database.hostname": "mysql-legacy",
     "database.port": "3306",
     "database.user": "root",
     "database.password": "root",
-    "database.server.id": "2",
-    "database.server.name": "revamp",
+    "database.server.id": "1",
+    "database.server.name": "legacy",
     
-    "table.include.list": "revamp_db.revamp_users,revamp_db.revamp_posts,revamp_db.revamp_likes",
+    "table.include.list": "legacy_db.legacy_users,legacy_db.legacy_posts,legacy_db.legacy_likes",
     
-    "topic.prefix": "revamp",
+    "topic.prefix": "legacy",
     
     "schema.history.internal.kafka.bootstrap.servers": "kafka:9092",
-    "schema.history.internal.kafka.topic": "schema-changes.revamp",
+    "schema.history.internal.kafka.topic": "schema-history.legacy",
     
     "key.converter": "org.apache.kafka.connect.json.JsonConverter",
     "key.converter.schemas.enable": "false",
@@ -46,7 +46,6 @@
     "max.queue.size": "8192",
     "poll.interval.ms": "1000",
     
-    "binlog.buffer.size": "8192"
+    "binlog.buffer.size": "32768"
   }
 }
-
